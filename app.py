@@ -6177,7 +6177,8 @@ def _public_monitors(now):
 def _public_monitors_summary(monitors):
     return {"total": len(monitors),
             "up": sum(1 for m in monitors if m["state"] == "up"),
-            "down": sum(1 for m in monitors if m["state"] == "down")}
+            "down": sum(1 for m in monitors if m["state"] == "down"),
+            "maintenance": sum(1 for m in monitors if m.get("in_maintenance"))}
 
 def _public_incident_feed(monitors, now, days=14, cap=25):
     """Recent incidents across all public components, tagged with the service
@@ -6279,19 +6280,19 @@ def _public_status_detail(cid, now):
         "incidents": _uptime_incidents(rows90),
         "cert_days_remaining": s["cert_days_remaining"],
         "cert_expires_at": s["cert_expires_at"], "cert_status": s["cert_status"],
+        "in_maintenance": _in_maintenance("uptime", check["id"]) or _in_maintenance("uptime", check.get("label", "")),
     }
 
 def _public_overall_status(cards, monitors):
     """ok only when every overview card is ok and no public monitor is down;
-    crit if a monitor is down; maintenance if nothing is down but something
-    is covered by an active maintenance window; warn otherwise."""
-    if any(m["state"] == "down" for m in monitors):
+    crit if a monitor is down outside maintenance; maintenance if the only
+    down monitors are covered by an active maintenance window; warn otherwise."""
+    hard_down = [m for m in monitors if m["state"] == "down" and not m.get("in_maintenance")]
+    if hard_down:
         return "crit"
-    if all(c.get("status") == "ok" for c in cards):
-        if any(m.get("in_maintenance") for m in monitors):
-            return "maintenance"
-        return "ok"
-    return "warn"
+    if any(m.get("in_maintenance") for m in monitors):
+        return "maintenance"
+    return "ok" if all(c.get("status") == "ok" for c in cards) else "warn"
 
 def _public_status_enabled():
     """On if either the PUBLIC_STATUS env var or the Settings toggle is set --

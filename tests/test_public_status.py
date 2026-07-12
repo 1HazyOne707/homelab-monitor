@@ -82,6 +82,7 @@ def _wipe():
     with _app.LOCK:
         _app.DB.execute("DELETE FROM uptime_checks")
         _app.DB.execute("DELETE FROM uptime_results")
+        _app.DB.execute("DELETE FROM maintenance_windows")
         _app.DB.commit()
 
 def test_public_monitor_listed_only_when_public(client):
