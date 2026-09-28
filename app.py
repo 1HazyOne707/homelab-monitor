@@ -295,23 +295,7 @@ CREATE TABLE IF NOT EXISTS maintenance_windows(
   kind TEXT NOT NULL DEFAULT '*', pattern TEXT NOT NULL DEFAULT '*',
   start_ts INTEGER NOT NULL, end_ts INTEGER NOT NULL,
   recurrence TEXT, note TEXT, created_at INTEGER NOT NULL);
--- Phase 1.2a: per-minute and per-hour rollup tables (additive; raw tables unchanged)
-CREATE TABLE IF NOT EXISTS samples_1m (
-  ts        INTEGER PRIMARY KEY,
-  util      REAL,
-  mem_used  REAL,
-  mem_total REAL,
-  power     REAL,
-  temp      REAL,
-  cnt       INTEGER DEFAULT 1,
-  cpu       REAL,
-  ram_used  REAL,
-  ram_total REAL,
-  load1     REAL,
-  ctemp     REAL,
-  cpu_power REAL,
-  dram_power REAL
-);
+-- Phase 1.2a: per-hour rollup table (additive; raw tables unchanged)
 CREATE TABLE IF NOT EXISTS samples_1h (
   ts        INTEGER PRIMARY KEY,
   util      REAL,
@@ -328,21 +312,13 @@ CREATE TABLE IF NOT EXISTS samples_1h (
   cpu_power REAL,
   dram_power REAL
 );
-CREATE TABLE IF NOT EXISTS net_samples_1m (
-  ts        INTEGER PRIMARY KEY,
-  bytes_in  REAL,
-  bytes_out REAL,
-  cnt       INTEGER DEFAULT 1
-);
 CREATE TABLE IF NOT EXISTS net_samples_1h (
   ts        INTEGER PRIMARY KEY,
   bytes_in  REAL,
   bytes_out REAL,
   cnt       INTEGER DEFAULT 1
 );
-CREATE INDEX IF NOT EXISTS idx_samples_1m_ts     ON samples_1m(ts);
 CREATE INDEX IF NOT EXISTS idx_samples_1h_ts     ON samples_1h(ts);
-CREATE INDEX IF NOT EXISTS idx_net_samples_1m_ts ON net_samples_1m(ts);
 CREATE INDEX IF NOT EXISTS idx_net_samples_1h_ts ON net_samples_1h(ts);
 -- Per-host time-series (multi-host slice): one raw row per successful host poll
 -- plus an hourly rollup keyed (ts, host) — the same raw/1h split the hub uses
@@ -469,19 +445,10 @@ def _apply_schema_migrations(conn):
 def _backfill_rollups(conn):
     """Populate rollup tables from existing raw data (idempotent: INSERT OR IGNORE)."""
     conn.executescript("""
-        INSERT OR IGNORE INTO samples_1m(ts,util,mem_used,mem_total,power,temp,cnt,cpu,ram_used,ram_total,load1,ctemp,cpu_power,dram_power)
-        SELECT (ts/60)*60, AVG(util), AVG(mem_used), AVG(mem_total), AVG(power), AVG(temp), COUNT(*),
-               AVG(cpu), AVG(ram_used), AVG(ram_total), AVG(load1), AVG(ctemp), AVG(cpu_power), AVG(dram_power)
-        FROM samples GROUP BY (ts/60)*60;
-
         INSERT OR IGNORE INTO samples_1h(ts,util,mem_used,mem_total,power,temp,cnt,cpu,ram_used,ram_total,load1,ctemp,cpu_power,dram_power)
         SELECT (ts/3600)*3600, AVG(util), AVG(mem_used), AVG(mem_total), AVG(power), AVG(temp), COUNT(*),
                AVG(cpu), AVG(ram_used), AVG(ram_total), AVG(load1), AVG(ctemp), AVG(cpu_power), AVG(dram_power)
         FROM samples GROUP BY (ts/3600)*3600;
-
-        INSERT OR IGNORE INTO net_samples_1m(ts,bytes_in,bytes_out,cnt)
-        SELECT (ts/60)*60, AVG(bytes_in), AVG(bytes_out), COUNT(*)
-        FROM net_samples GROUP BY (ts/60)*60;
 
         INSERT OR IGNORE INTO net_samples_1h(ts,bytes_in,bytes_out,cnt)
         SELECT (ts/3600)*3600, AVG(bytes_in), AVG(bytes_out), COUNT(*)

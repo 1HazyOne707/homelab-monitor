@@ -131,6 +131,30 @@ def _resolve_fleet_host(stored, known_hosts):
         return "local"
     return stored if stored in known_hosts else "local"
 
+def purge_finished_runs(conn, cutoff):
+    """Delete finished runs whose end predates `cutoff`, with their metrics.
+
+    Called by sample_once()'s retention pass, and directly by tests — the
+    behaviour lives here rather than inline so a test exercises the shipped
+    statements instead of a copy of them that can silently drift.
+
+    A run is eligible only when it is not 'running' AND its effective end
+    (ended_at, falling back to started_at) is older than the cutoff. Age alone
+    cannot decide: `runs` has no ts column, and a long-running experiment must
+    survive regardless of how long ago it started. Metrics go first so a crash
+    between the two statements leaves a childless run (harmless) rather than
+    orphaned metrics. The stale-run janitor flips crashed 'running' rows to
+    'killed' on a faster cadence, so the two compose rather than race.
+    """
+    dead = [r[0] for r in conn.execute(
+        "SELECT id FROM runs WHERE status!='running' AND COALESCE(ended_at,started_at)<?",
+        (cutoff,)).fetchall()]
+    if dead:
+        conn.executemany("DELETE FROM run_metrics WHERE run_id=?", [(rid,) for rid in dead])
+        conn.executemany("DELETE FROM runs WHERE id=?", [(rid,) for rid in dead])
+    return len(dead)
+
+
 def sample_once():
     import app as _app
     conts = _app.containers()
@@ -517,6 +541,7 @@ def sample_once():
                 _app.DB.executemany(f"DELETE FROM {t} WHERE ts<?", [(ts - _retention,)])
             _app.DB.executemany("DELETE FROM disk_io_samples WHERE ts<?", [(ts - _app._DISK_IO_RETENTION,)])
             _app.DB.executemany("DELETE FROM proc_io_samples WHERE ts<?", [(ts - _app._PROC_IO_RETENTION,)])
+            purge_finished_runs(_app.DB, ts - _retention)
         if ts % 60 < _app.INTERVAL:   # stale-run janitor: a crashed/disconnected push run -> killed
             _app.DB.executemany(
                 "UPDATE runs SET status='killed', ended_at=COALESCE(ended_at,heartbeat_at,?) "

@@ -79,6 +79,21 @@ def apply_schema_migrations(conn, schema_sql, sample_migrations, host_migrations
             conn.execute(stmt)
         except sqlite3.OperationalError:
             pass
+    # samples_1m / net_samples_1m were write-only (nothing ever read them) and
+    # absent from the retention purge, so they grew forever on existing DBs.
+    # CREATE TABLE IF NOT EXISTS no longer creates them, but that alone leaves
+    # them orphaned on every pre-existing database — drop them explicitly.
+    # DROP returns the pages to SQLite's freelist for reuse by later writes;
+    # the file itself does not shrink without a VACUUM, which we don't run
+    # because it rewrites the whole database under an exclusive lock.
+    for stmt in ("DROP INDEX IF EXISTS idx_samples_1m_ts",
+                 "DROP INDEX IF EXISTS idx_net_samples_1m_ts",
+                 "DROP TABLE IF EXISTS samples_1m",
+                 "DROP TABLE IF EXISTS net_samples_1m"):
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError:
+            pass
     # Migrate legacy single-instance api_key setting -> api_keys table.
     try:
         row = conn.execute("SELECT value FROM settings WHERE key='api_key'").fetchone()

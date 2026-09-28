@@ -38,11 +38,10 @@ def min_ts(conn=None):
 def rollup_now(conn, ts, util, mem_used, mem_total, power, temp,
                cpu=None, ram_used=None, ram_total=None, load1=None, ctemp=None,
                cpu_power=None, dram_power=None):
-    """Upsert the current minute and hour rollup buckets for samples.
+    """Upsert the current hour rollup bucket for samples.
     conn is required (called from within app LOCK)."""
-    m = (ts // 60) * 60
     h = (ts // 3600) * 3600
-    for bucket, tbl in ((m, "samples_1m"), (h, "samples_1h")):
+    for bucket, tbl in ((h, "samples_1h"),):
         conn.execute(f"""
             INSERT INTO {tbl}(ts,util,mem_used,mem_total,power,temp,cnt,
                 cpu,ram_used,ram_total,load1,ctemp,cpu_power,dram_power)
@@ -66,15 +65,14 @@ def rollup_now(conn, ts, util, mem_used, mem_total, power, temp,
 
 
 def rollup_net_now(conn, ts, net_rows):
-    """Upsert the current minute and hour rollup buckets for net_samples.
+    """Upsert the current hour rollup bucket for net_samples.
     conn is required (called from within app LOCK)."""
     if not net_rows:
         return
-    m = (ts // 60) * 60
     h = (ts // 3600) * 3600
     total_in  = sum(r[2] or 0 for r in net_rows)
     total_out = sum(r[3] or 0 for r in net_rows)
-    for bucket, tbl in ((m, "net_samples_1m"), (h, "net_samples_1h")):
+    for bucket, tbl in ((h, "net_samples_1h"),):
         conn.execute(f"""
             INSERT INTO {tbl}(ts,bytes_in,bytes_out,cnt)
             VALUES(?,?,?,1)

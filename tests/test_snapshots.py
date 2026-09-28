@@ -32,7 +32,7 @@ VERSION_SENTINEL = "<VERSION>"
 
 def _clean_db():
     with app.LOCK:
-        for tbl in ("samples", "samples_1m", "samples_1h", "net_samples", "net_samples_1m", "net_samples_1h",
+        for tbl in ("samples", "samples_1h", "net_samples", "net_samples_1h",
                     "proc", "models", "edges", "events", "disk_io_samples",
                     "runs", "run_metrics", "api_keys", "hosts",
                     "uptime_checks", "uptime_results", "maintenance_windows",
