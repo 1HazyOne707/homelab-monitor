@@ -437,6 +437,64 @@ def _notify_gpu_missing(s, rules, now):
                            f"this clears itself after an hour.", rules=rules)
 
 
+# {name: wall-clock ts the current DOWN streak began}, keyed like
+# _uptime_down_since, so a recovery message can quote the real downtime. In
+# memory only: a hub restart mid-outage simply re-arms from now, the same
+# conservative direction _GPU_SINCE takes — it can delay a duration figure,
+# never invent one.
+_HOST_DOWN_SINCE = {}
+
+
+def notify_host_down(s, rules):
+    """Per-host reachability alerting, mirroring notify_uptime's discipline:
+      • DOWN      — fired once a registered remote's last successful poll falls
+                    outside its own staleness window (_host_is_online going False).
+                    That window already has hysteresis baked in (several poll
+                    intervals, or twice the host's learned probe budget), so this
+                    is inherently sustained, not one missed poll.
+      • RECOVERED — fired once it comes back, quoting the downtime duration.
+    Maintenance-window suppression and min-level gating come for free from
+    _emit's own key-prefix parsing — for the DOWN alert specifically: its key
+    is the plain two-part "host:<name>" (kind "host", matching RULE_KINDS in
+    dashboard.html and the existing routing/maintenance vocabulary), so a
+    maintenance window created with kind="host" actually suppresses it.
+    The RECOVERED key follows notify_uptime's own "kind:rec:<id>" shape
+    (here "host:rec:<name>") — recovery is good news a maintenance window
+    isn't meant to gate, same as uptime's rec_key already isn't cleanly
+    kind-matched by _emit's key.split(":", 1) (it passes the whole
+    "rec:<name>" remainder as the fnmatch name, not just the name) — an
+    existing, accepted asymmetry this mirrors rather than introduces.
+    The hub itself is never in HOST_DATA (it's tracked via LATEST), so it can
+    never be flagged down by this scan."""
+    import app as _app
+    with _app.HOST_DATA_LOCK:
+        items = list(_app.HOST_DATA.items())
+    now = int(time.time())
+    for name, entry in items:
+        key = f"host:{name}"
+        rec_key = f"host:rec:{name}"
+        if _app._host_is_online(entry):
+            with _app._NOTIFIER_LOCK:
+                was_down = key in _app._NOTIFIED
+            if was_down:
+                since = _HOST_DOWN_SINCE.pop(name, None)
+                dur = _app._fmt_dur(now - since) if since else "?"
+                _app._emit(s, rec_key, "warning", f"🟢 {name} is back",
+                           f"{name} recovered after {dur} unreachable.", rules=rules)
+                _app._clear(key)
+            else:
+                _app._clear(rec_key)
+            continue
+        last_ok = entry.get("at")
+        _HOST_DOWN_SINCE.setdefault(name, last_ok or now)
+        gone_for = now - (last_ok or now)
+        since = f" It last reported {_app._fmt_dur(gone_for)} ago." if last_ok else ""
+        err = entry.get("error")
+        detail = f"{name} has stopped responding.{since}" + (f" Last error: {err}" if err else "")
+        _app._emit(s, key, "critical", f"🔴 {name} is unreachable", detail, rules=rules)
+        _app._clear(rec_key)
+
+
 def notify_scan():
     import app as _app
     s = _app.get_settings()
@@ -497,6 +555,12 @@ def notify_scan():
         notify_gpu_cards(s, rules)
     except Exception as e:
         print("notify_scan gpu error:", e, flush=True)
+
+    # ── Registered remote hosts going unreachable ────────────────────────────
+    try:
+        notify_host_down(s, rules)
+    except Exception as e:
+        print("notify_scan host_down error:", e, flush=True)
 
     # ── Disks crossing the configured threshold ───────────────────────────────
     try: disk_thr = int(s.get("disk_alert_pct") or 90)
