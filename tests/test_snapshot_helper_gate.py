@@ -61,6 +61,27 @@ class SnapshotHelperGateTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             assert_snapshot(self, GATE_TEST_NAME, {"a": 2})
 
+    def test_baseline_writes_with_trailing_newline(self):
+        os.environ["UPDATE_SNAPSHOTS"] = "1"
+        assert_snapshot(self, GATE_TEST_NAME, {"a": 1})
+        self.assertTrue(
+            self.path.read_text().endswith("\n"),
+            "a written baseline must end with a newline, so an editor's "
+            "insert-final-newline-on-save doesn't produce a false diff",
+        )
+
+    def test_baseline_with_editor_added_trailing_newline_still_matches(self):
+        # An editor or git's own EOF normalization commonly adds a trailing
+        # newline on save; a baseline that already has one must still compare
+        # equal to the same underlying data.
+        os.environ["UPDATE_SNAPSHOTS"] = "1"
+        assert_snapshot(self, GATE_TEST_NAME, {"a": 1})
+        del os.environ["UPDATE_SNAPSHOTS"]
+        with self.path.open("a") as f:
+            f.write("\n")
+        # Should not raise.
+        assert_snapshot(self, GATE_TEST_NAME, {"a": 1})
+
 
 if __name__ == "__main__":
     unittest.main()

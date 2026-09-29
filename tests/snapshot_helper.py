@@ -26,13 +26,13 @@ def assert_snapshot(test_case, name: str, data: dict):
     path = SNAP_DIR / f"{name}.json"
     serialized = json.dumps(data, indent=2, sort_keys=True, default=str)
     if os.environ.get("UPDATE_SNAPSHOTS"):
-        path.write_text(serialized)
+        path.write_text(serialized + "\n")
         return
     if not path.exists():
         test_case.fail(
             f"Snapshot missing for {name}. Run UPDATE_SNAPSHOTS=1 pytest to create it deliberately."
         )
-    expected = json.loads(path.read_text())
+    expected = json.loads(path.read_text())  # json.loads ignores trailing whitespace
     test_case.assertEqual(
         serialized,
         json.dumps(expected, indent=2, sort_keys=True, default=str),
