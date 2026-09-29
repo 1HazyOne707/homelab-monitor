@@ -7012,6 +7012,11 @@ def _public_settings():
 _DISK_SCAN, _DISK_SCAN_LOCK = {}, threading.Lock()
 _DISK_SCAN_TTL = 900   # reuse a completed scan for 15 min
 _DISK_SCAN_TIMEOUT = 600
+# Minimum time between two rescans of the same (host, path) — rescan=1 skips
+# the normal TTL reuse by design, but it must still bottom out at one scan at
+# a time and a floor between them, or it's an unbounded resource-exhaustion
+# knob for anything that can reach this endpoint.
+_DISK_SCAN_RESCAN_COOLDOWN = 30
 # Two levels at once (folder + its sub-folders) so the treemap can nest. du
 # recurses fully whatever --max-depth says, so asking for depth 2 costs the same
 # as depth 1 and only prints more. --one-file-system keeps a scan of / from
