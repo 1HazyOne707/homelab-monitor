@@ -112,6 +112,36 @@ def apply_schema_migrations(conn, schema_sql, sample_migrations, host_migrations
     record_baseline_if_needed(conn)
 
 
+def backfill_interval_columns(conn, current_interval):
+    """One-time default for rows written before interval_sec/wsec existed.
+
+    Pre-existing rows carry no record of the cadence they were sampled at, so
+    the accepted best-effort default is the INTERVAL in effect right now, at
+    migration time. Idempotent via the `IS NULL` guards: rows already backfilled
+    (or written post-migration, which always set these columns) are untouched.
+    """
+    conn.execute("UPDATE samples SET interval_sec=? WHERE interval_sec IS NULL", (current_interval,))
+    conn.execute("UPDATE host_samples SET interval_sec=? WHERE interval_sec IS NULL", (current_interval,))
+    conn.execute("UPDATE power_proc SET interval_sec=? WHERE interval_sec IS NULL", (current_interval,))
+    conn.execute(
+        "UPDATE samples_1h SET wsec=COALESCE(power,0)*cnt*? WHERE wsec IS NULL",
+        (current_interval,))
+    conn.execute(
+        "UPDATE samples_1h SET "
+        "cpu_wsec=COALESCE(cpu_power,0)*cnt*?, "
+        "dram_wsec=COALESCE(dram_power,0)*cnt*? "
+        "WHERE cpu_wsec IS NULL",
+        (current_interval, current_interval))
+    conn.execute(
+        "UPDATE host_samples_1h SET "
+        "gpu_wsec=COALESCE(gpu_power,0)*cnt*?, "
+        "cpu_wsec=COALESCE(cpu_power,0)*cnt*?, "
+        "dram_wsec=COALESCE(dram_power,0)*cnt*? "
+        "WHERE gpu_wsec IS NULL",
+        (current_interval, current_interval, current_interval))
+    conn.commit()
+
+
 def record_baseline_if_needed(conn):
     """Stamp migration 0001 on any DB that already has the baseline schema applied."""
     try:

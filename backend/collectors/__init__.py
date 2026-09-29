@@ -481,15 +481,17 @@ def sample_once():
         # the host columns are always real.
         gcols = (util, mem_used, mem_total, power, temp) if gpu_avail else (None,)*5
         _app.DB.executemany(
-            "INSERT OR REPLACE INTO samples(ts,util,mem_used,mem_total,power,temp,cpu,ram_used,ram_total,load1,ctemp,cpu_power,dram_power)"
-            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO samples(ts,util,mem_used,mem_total,power,temp,cpu,ram_used,ram_total,load1,ctemp,cpu_power,dram_power,interval_sec)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [(ts, *gcols, host["cpu"], host["ram_used"],
-              host["ram_total"], host["load1"], host["ctemp"], cpu_power, dram_power)])
+              host["ram_total"], host["load1"], host["ctemp"], cpu_power, dram_power, _app.INTERVAL)])
         _app.DB.executemany("INSERT INTO proc(ts,service,mem,host) VALUES(?,?,?,'local')",
                             [(ts, svc, mem) for svc, mem in procs.items()])
         pp_rows = _app._attribute_power_rows(ts, power, procs, cpu_power, top_cpu)
         if pp_rows:
-            _app.DB.executemany("INSERT INTO power_proc(ts,kind,name,watts) VALUES(?,?,?,?)", pp_rows)
+            _app.DB.executemany(
+                "INSERT INTO power_proc(ts,kind,name,watts,interval_sec) VALUES(?,?,?,?,?)",
+                [(*row, _app.INTERVAL) for row in pp_rows])
         _app.DB.executemany("INSERT INTO models(ts,service,model,vram,ram) VALUES(?,?,?,?,?)",
                             [(ts, svc, mdl, vram, ram) for svc, mdl, vram, ram, _ctx, _h in models if vram is not None])
         _app.DB.executemany("INSERT INTO edges VALUES(?,?,?,?)",
@@ -548,7 +550,7 @@ def sample_once():
                 "WHERE status='running' AND heartbeat_at IS NOT NULL AND heartbeat_at < ?",
                 [(ts, ts - 180)])
         # Phase 1.2a: keep rollup tables current after each raw insert
-        _app._rollup_now(_app.DB, ts, *gcols,
+        _app._rollup_now(_app.DB, ts, *gcols, _app.INTERVAL,
                     cpu=host["cpu"], ram_used=host["ram_used"], ram_total=host["ram_total"],
                     load1=host["load1"], ctemp=host["ctemp"],
                     cpu_power=cpu_power, dram_power=dram_power)
