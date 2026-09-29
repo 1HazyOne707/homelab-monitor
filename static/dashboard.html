@@ -7599,7 +7599,7 @@ async function openRun(id){
         y:{position:'left',min:0,grid:{color:cv('--free')},ticks:{color:cv('--mut'),callback:v=>v+' W'}},
         y1:{position:'right',min:0,max:100,grid:{display:false},ticks:{color:cv('--mut'),callback:v=>v+'%'}}},
       plugins:{legend:{labels:{color:cv('--tx'),boxWidth:12}}}}});
-  let costCap=I18N.tf('exp.run_cost_cap','The whole box drew {kwh} kWh ({cost}) in GPU energy over this run's window · peak util {util}% · avg {avg} W.',{kwh:(j.energy_kwh||0).toFixed(3),cost:cur+(j.cost||0).toFixed(2),util:j.peak_util,avg:j.avg_w});
+  let costCap=I18N.tf('exp.run_cost_cap','The whole box drew {kwh} kWh ({cost}) in GPU energy over this run\'s window · peak util {util}% · avg {avg} W.',{kwh:(j.energy_kwh||0).toFixed(3),cost:cur+(j.cost||0).toFixed(2),util:j.peak_util,avg:j.avg_w});
   const tokKey=keys.find(k=>TOK_METRIC_KEYS.includes(k));
   if(tokKey){
     const vals=(j.metrics[tokKey].values||[]).filter(v=>v!=null);
