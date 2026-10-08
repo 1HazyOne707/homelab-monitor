@@ -3875,9 +3875,12 @@ def _local_now_snapshot():
     # Fleet probes keep per-card GPUs and Docker inventory in the host block.
     # Mirror that shape locally so /api/fleet can expose the same assets for
     # the hub and for remotes without inventing a second local-only contract.
-    out["gpus"] = list(LATEST.get("gpus") or [])
-    if H.get("docker") is not None:
-        out["docker"] = H["docker"]
+    # The hub's own inventory is HEALTH["docker"] (collect_docker) — LATEST["host"]
+    # never carries it — so read it from there.
+    out["gpus"] = list((LATEST or {}).get("gpus") or [])
+    docker = (HEALTH or {}).get("docker")
+    if docker is not None:
+        out["docker"] = docker
     # RAPL power — top-level in LATEST (not inside host), so pull explicitly.
     # Mirrors the shape probe.py emits for remotes (cpu_power/dram_power in host).
     for k in ("cpu_power", "dram_power"):

@@ -17,16 +17,17 @@ class TestFleetPayloadAssets(unittest.TestCase):
             "gpus": remote_gpus,
             "docker": {"available": True, "containers": remote_containers},
         }
-        local_host = {
-            "docker": {"available": True, "containers": local_containers},
-        }
+        local_docker = {"available": True, "containers": local_containers}
         remote_entry = {"data": {"host": remote_host}, "at": 123, "error": None}
         hosts = [{"name": "remote", "ssh_target": "user@remote", "last_check": None}]
 
+        # The hub's own inventory lives in HEALTH (collect_docker), never in
+        # LATEST["host"] — seed it there, as production does.
         with patch.object(app, "LATEST", {
             "gpus": local_gpus,
-            "host": local_host,
-        }), patch.object(app, "list_hosts", return_value=hosts), \
+            "host": {},
+        }), patch.dict(app.HEALTH, {"docker": local_docker}), \
+             patch.object(app, "list_hosts", return_value=hosts), \
              patch.dict(app.HOST_DATA, {"remote": remote_entry}, clear=True), \
              patch.object(app, "enrich_os_upgrade", side_effect=lambda value: value), \
              patch.object(app, "_host_is_online", return_value=True), \
@@ -41,6 +42,7 @@ class TestFleetPayloadAssets(unittest.TestCase):
 
     def test_missing_assets_degrade_to_empty_arrays(self):
         with patch.object(app, "LATEST", {"gpus": [], "host": {}}), \
+             patch.dict(app.HEALTH, {"docker": None}), \
              patch.object(app, "list_hosts", return_value=[{"name": "remote", "ssh_target": "u@r", "last_check": None}]), \
              patch.dict(app.HOST_DATA, {"remote": {"data": {"host": {}}, "at": 1}}, clear=True), \
              patch.object(app, "enrich_os_upgrade", side_effect=lambda value: value), \
@@ -52,6 +54,19 @@ class TestFleetPayloadAssets(unittest.TestCase):
         for row in payload["hosts"]:
             self.assertEqual(row["gpus"], [])
             self.assertEqual(row["containers"], [])
+
+    def test_local_docker_unavailable_degrades_to_empty(self):
+        unavailable = {"available": False, "reason": "Docker API unreachable",
+                       "containers": [], "summary": {"total": 0}}
+        with patch.object(app, "LATEST", {"gpus": [], "host": {}}), \
+             patch.dict(app.HEALTH, {"docker": unavailable}), \
+             patch.object(app, "list_hosts", return_value=[]), \
+             patch.object(app, "enrich_os_upgrade", side_effect=lambda value: value), \
+             patch.object(app, "gpu_telemetry", return_value=None), \
+             patch.object(app.socket, "gethostname", return_value="hub"):
+            payload = app.fleet_payload()
+
+        self.assertEqual(payload["hosts"][0]["containers"], [])
 
 
 if __name__ == "__main__":
